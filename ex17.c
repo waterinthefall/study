@@ -189,7 +189,7 @@ int main(int argc, char *argv[])
     struct Connection *conn = Database_open(filename, action,max_data,max_rows);
     int id = 0;
 
-    if(argc > 5) id = atoi(argv[3]);
+    if(argc > 5) id = atoi(argv[5]);
 		printf("%d  %d",id,conn->db->max_rows);
     if(id >= conn->db->max_rows) die("There's not that many records.",conn);
 
@@ -206,7 +206,7 @@ int main(int argc, char *argv[])
             break;
 
         case 's':
-            if(argc != 6) die("Need id, name, email to set",conn);
+            if(argc != 8) die("Need id, name, email to set",conn);
 
             Database_set(conn, id, argv[6], argv[7]);
             Database_write(conn);
