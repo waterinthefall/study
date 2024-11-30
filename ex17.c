@@ -49,17 +49,23 @@ void Address_print(struct Address *addr)
 
 void Database_load(struct Connection *conn)
 {
-    int rc = fread(&(conn->db->max_data), sizeof(int), 1, conn->file);
-    if(rc != 1) die("Failed to load max_data.",conn);
 
-    rc = fread(&(conn->db->max_rows), sizeof(int), 1, conn->file);
-    if(rc != 1) die("Failed to load max_rows.",conn);
+    fseek(conn->file, sizeof(int) * 2, SEEK_SET);
 
-		conn->db->rows=malloc(sizeof(struct Address)*conn->db->max_rows);
-		if(!conn->db->rows) die("Failed to malloc memory.",conn);
+    for (int i = 0; i < conn->db->max_rows; i++)
+    {
+        struct Address *addr = &conn->db->rows[i];
+        if (addr->set)
+            Address_print(addr);
 
-		rc = fread(conn->db->rows,sizeof(struct Address),conn->db->max_rows,conn->file);
-		if(rc!=conn->db->max_rows) die("Failed to load rows.",conn);
+        fread(&addr->id, sizeof(addr->id), 1, conn->file);
+        fread(&addr->set, sizeof(addr->set), 1, conn->file);
+        if (addr->set)
+        {
+            fread(addr->name, sizeof(char), conn->db->max_data, conn->file);
+            fread(addr->email, sizeof(char), conn->db->max_data, conn->file);
+        }
+    }
 }
 
 struct Connection *Database_open(const char *filename, char mode,int max_data, int max_rows)
@@ -79,7 +85,11 @@ struct Connection *Database_open(const char *filename, char mode,int max_data, i
         conn->file = fopen(filename, "w");
     } else {
         conn->file = fopen(filename, "r+");
-
+        for (int i = 0; i < MAX_ROWS; i++)
+        {
+            conn->db->rows[i].name = malloc(MAX_DATA);
+            conn->db->rows[i].email = malloc(MAX_DATA);
+        }
         if(conn->file) {
             Database_load(conn);
         }
@@ -92,13 +102,30 @@ struct Connection *Database_open(const char *filename, char mode,int max_data, i
 
 void Database_close(struct Connection *conn)
 {
-    if(conn) {
-        if(conn->file) fclose(conn->file);
-        if(conn->db){
-					if (conn->db->rows) free(conn->db->rows);
-				 	free(conn->db);
-				}
-				free(conn);
+    if (conn) {
+        if (conn->file) fclose(conn->file);
+        
+        if (conn->db) {
+            if (conn->db->rows) {
+                
+                for (int i = 0; i < conn->db->max_rows; i++) {
+                    if (conn->db->rows[i].name) {  
+                        free(conn->db->rows[i].name);
+                        conn->db->rows[i].name = NULL;  
+                    }
+                    if (conn->db->rows[i].email) {  
+                        free(conn->db->rows[i].email);
+                        conn->db->rows[i].email = NULL;  
+                    }
+                }
+                free(conn->db->rows);
+                conn->db->rows = NULL;
+            }
+            free(conn->db);
+            conn->db = NULL;
+        }
+        free(conn);
+        conn = NULL;
     }
 }
 
@@ -112,9 +139,16 @@ void Database_write(struct Connection *conn)
 		rc = fwrite(&(conn->db->max_rows),sizeof(int),1,conn->file);
 		if (rc!=1) die("Failed to write max_rows",conn);   
 
-    rc = fwrite(conn->db->rows, sizeof(struct Address), conn->db->max_rows, conn->file);
-    if(rc != conn->db->max_rows) die("Failed to write database.",conn);
+    for (int i = 0; i < conn->db->max_rows; i++) {
+        struct Address *addr = &conn->db->rows[i];
 
+        fwrite(&addr->id, sizeof(addr->id), 1, conn->file);
+        fwrite(&addr->set, sizeof(addr->set), 1, conn->file);
+				if(addr->set){
+					fwrite(addr->name, sizeof(char), conn->db->max_data, conn->file);  
+					fwrite(addr->email, sizeof(char), conn->db->max_data, conn->file);
+				} 
+    }
     rc = fflush(conn->file);
     if(rc == -1) die("Cannot flush database.",conn);
 }
@@ -139,11 +173,13 @@ void Database_set(struct Connection *conn, int id, const char *name, const char 
 
     addr->set = 1;
     // WARNING: bug, read the "How To Break It" and fix this
+		addr->name = malloc(conn->db->max_data);
     char *res = strncpy(addr->name, name, conn->db->max_data - 1);
 		addr->name[conn->db->max_data - 1]='\0';
     // demonstrate the strncpy bug
     if(!res) die("Name copy failed",conn);
 
+		addr->email = malloc(conn->db->max_data);    
     res = strncpy(addr->email, email, conn->db->max_data - 1);
 		addr->email[conn->db->max_data - 1]='\0';
     if(!res) die("Email copy failed",conn);
@@ -190,7 +226,6 @@ int main(int argc, char *argv[])
     int id = 0;
 
     if(argc > 5) id = atoi(argv[5]);
-		printf("%d  %d",id,conn->db->max_rows);
     if(id >= conn->db->max_rows) die("There's not that many records.",conn);
 
     switch(action) {
@@ -201,7 +236,6 @@ int main(int argc, char *argv[])
 
         case 'g':
             if(argc != 6) die("Need an id to get",conn);
-
             Database_get(conn, id);
             break;
 
